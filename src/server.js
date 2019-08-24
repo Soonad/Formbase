@@ -48,10 +48,12 @@ app.use(express.urlencoded({extended: true}));
 app.use(express.json());
 
 app.get("*", (req, res) => {
+  res.header("Access-Control-Allow-Origin", "*");
   res.sendFile("/docs" + (req.path === "/" ? "/index.html" : req.path), {root: __dirname + "/.."});
 });
 
 app.post("/api/save_file", (req, res) => {
+  res.header("Access-Control-Allow-Origin", "*");
   var file = req.body.file;
   var code = req.body.code;
   if (!file || !code) {
@@ -66,6 +68,7 @@ app.post("/api/save_file", (req, res) => {
 });
 
 app.post("/api/load_file", (req, res) => {
+  res.header("Access-Control-Allow-Origin", "*");
   var file = req.body.file;
   fm_load_file(file)
     .then(result => res.send(JSON.stringify(["ok", result])))
