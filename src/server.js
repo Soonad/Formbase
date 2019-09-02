@@ -1,3 +1,5 @@
+// TODO: this file isn't very well-coded and needs better abstractions
+
 const express = require("express")
 const app = express()
 const port = process.argv[2] || 80;
@@ -10,37 +12,79 @@ const fm_file_path = file_name => {
 };
 
 const fm_save_file = (async function save(file_name, file_code, version = 0) {
+  //console.log("attempting to save", file_name);
   var file_path = fm_file_path(file_name + "@" + version);
   var last_file_path = version > 0 ? fm_file_path(file_name + "@" + (version - 1)) : null;
+  // If file already exists, try one version above
   if (fs.existsSync(file_path)) {
     return save(file_name, file_code, version + 1);
   } else {
     try {
-      if (version > 0) {
-        var last_file_code = await fsp.readFile(last_file_path, "utf8");
-        if (file_code === last_file_code) {
-          return file_name + "@" + (version - 1);
+      // If last saved file is identical, returns it
+      // TODO: use global hashes instead
+      var last_file_code = version > 0 && await fsp.readFile(last_file_path, "utf8");
+      if (version > 0 && last_file_code === file_code) {
+        return ["ok", file_name + "@" + (version - 1)];
+      // Saves file to disk
+      } else {
+        try {
+          // TODO: make more async
+          //console.log("parsing file");
+          var imports = file_code
+            .split("\n")
+            .filter(line => new RegExp("^import ").test(line))
+            .map(line => line.replace("import ", "").trim().replace(new RegExp(" .*"), ""));
+          //console.log("imports:", JSON.stringify(imports));
+          for (var i = 0; i < imports.length; ++i) {
+            var import_imported_by_path = fm_file_path(imports[i]) + ".imported_by";
+            if (!fs.existsSync(import_imported_by_path)) {
+              await fsp.writeFile(import_imported_by_path, "");
+            }
+            await fsp.appendFile(import_imported_by_path, file_name + "@" + version + "\n");
+          }
+          //console.log("saving file to ", file_path);
+          await fsp.writeFile(file_path, file_code);
+          return ["ok", file_name + "@" + version];
+        } catch (e) {
+          console.log(e);
+          return ["err", "Couldn't save file."];
         }
       }
-      await fsp.writeFile(file_path, file_code);
-      return file_name + "@" + version;
     } catch (e) {
       console.log(e);
-      return null;
+      return ["err", "Couldn't save file."];
     }
   }
 });
+
+const fm_load_file_parents = (async function load_file_parents(file_name_v) {
+  try {
+    var file_path = fm_file_path(file_name_v) + ".imported_by";
+    //console.log("loading imports:", file_path);
+    if (fs.existsSync(file_path)) {
+      var imports = (await fsp.readFile(file_path, "utf8")).split("\n");
+      imports.pop();
+      return ["ok", imports];
+    } else {
+      return ["ok", []];
+    }
+  } catch (e) {
+    //console.log("error", e);
+    return ["err", "Couldn't load imports of '" + file_name_v + "'."];
+  }
+});
+
 
 const fm_load_file = (async function load(file_name_v) {
   try {
     var file_path = fm_file_path(file_name_v);
     if (fs.existsSync(file_path)) {
-      return await fsp.readFile(file_path, "utf8");
+      return ["ok", await fsp.readFile(file_path, "utf8")];
     } else {
-      return null;
+      return ["err", "Couldn't find a file named '" + file_name_v + "' on FPM."];
     }
   } catch (e) {
-    return null;
+    return ["err", "Couldn't load '" + file_name_v + "'."];
   }
 });
 
@@ -65,8 +109,10 @@ app.post("/api/save_file", (req, res) => {
   }
   fm_save_file(file, code)
     .then(result => {
-      console.log("saved " + result + ": " + code.length + " chars");
-      res.send(JSON.stringify(["ok", result]))
+      if (result[0] === "ok") {
+        console.log("Saved " + result[1] + ": " + code.length + " chars");
+      }
+      return res.send(JSON.stringify(result))
     })
     .catch(e => res.send(JSON.stringify(["err"])));
 });
@@ -74,8 +120,15 @@ app.post("/api/save_file", (req, res) => {
 app.post("/api/load_file", (req, res) => {
   var file = req.body.file;
   fm_load_file(file)
-    .then(result => res.send(JSON.stringify(["ok", result])))
-    .catch(e => res.send(JSON.stringify(["err"])));
+    .then(result => res.send(JSON.stringify(result)))
+    .catch(e => res.send(JSON.stringify(["err", "Couldn't save file."])));
+});
+
+app.post("/api/load_file_parents", (req, res) => {
+  var file = req.body.file;
+  fm_load_file_parents(file)
+    .then(result => res.send(JSON.stringify(result)))
+    .catch(e => res.send(JSON.stringify(["err", "Couldn't save file."])));
 });
 
 app.listen(port, () => console.log(`Example app listening on port ${port}!`))
