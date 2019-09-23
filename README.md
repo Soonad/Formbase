@@ -1,6 +1,6 @@
-## Formality Package Manager (FPM)
+## Formbase
 
-Right now, it is a very simple filesystem-based storage for raw files. The API offers 3 functionalities:
+A global, immutable database of Formality terms (i.e., proofs, code, theorems), capable of tracking imports (i.e., citations, references). It offers a simple public API:
 
 - save_file(name, code): saves a file on the server, returns an unique name.
 
