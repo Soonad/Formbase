@@ -1,5 +1,25 @@
 // TODO: this file isn't very well-coded and needs better abstractions
 
+const sha3 = require('js-sha3').sha3_256;
+
+const to_base64 = numb => {
+  const chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ._";
+  var bits = numb.toString(2);
+  while (bits.length < 24) {
+    bits = "0" + bits;
+  }
+  console.log(bits);
+  var bs64 = "";
+  for (var i = 0; i < 4; ++i) {
+    bs64 += chars[parseInt(bits.slice(i*6, (i+1)*6), 2)];
+  }
+  return bs64;
+};
+
+const suffix = str => {
+  return to_base64(parseInt(sha3(str).slice(-6), 16));
+};
+
 const express = require("express")
 const app = express()
 const port = process.argv[2] || 80;
@@ -11,49 +31,34 @@ const fm_file_path = file_name => {
   return path.join(__dirname, "..", "fm", file_name + ".fm");
 };
 
-const fm_save_file = (async function save(file_name, file_code, version = 0) {
-  //console.log("attempting to save", file_name);
-  var file_path = fm_file_path(file_name + "@" + version);
-  var last_file_path = version > 0 ? fm_file_path(file_name + "@" + (version - 1)) : null;
-  // If file already exists, try one version above
-  if (fs.existsSync(file_path)) {
-    return save(file_name, file_code, version + 1);
-  } else {
-    try {
-      // If last saved file is identical, returns it
-      // TODO: use global hashes instead
-      var last_file_code = version > 0 && await fsp.readFile(last_file_path, "utf8");
-      if (version > 0 && last_file_code === file_code) {
-        return ["ok", file_name + "@" + (version - 1)];
-      // Saves file to disk
-      } else {
-        try {
-          // TODO: make more async
-          //console.log("parsing file");
-          var imports = file_code
-            .split("\n")
-            .filter(line => new RegExp("^import ").test(line))
-            .map(line => line.replace("import ", "").trim().replace(new RegExp(" .*"), ""));
-          //console.log("imports:", JSON.stringify(imports));
-          for (var i = 0; i < imports.length; ++i) {
-            var import_imported_by_path = fm_file_path(imports[i]) + ".imported_by";
-            if (!fs.existsSync(import_imported_by_path)) {
-              await fsp.writeFile(import_imported_by_path, "");
-            }
-            await fsp.appendFile(import_imported_by_path, file_name + "@" + version + "\n");
-          }
-          //console.log("saving file to ", file_path);
-          await fsp.writeFile(file_path, file_code);
-          return ["ok", file_name + "@" + version];
-        } catch (e) {
-          console.log(e);
-          return ["err", "Couldn't save file."];
-        }
-      }
-    } catch (e) {
-      console.log(e);
-      return ["err", "Couldn't save file."];
+const fm_save_file = (async function save(file_name, file_code) {
+  var file_hash = suffix(file_code);
+  var file_path = fm_file_path(file_name + "#" + file_hash);
+
+  try {
+    // Already saved, just return name
+    if (fs.existsSync(file_path)) {
+      return ["ok", file_name+"#"+file_hash]; // TODO: check if is actually the same file (collison)
     }
+    
+    var imports = file_code
+      .split("\n")
+      .filter(line => new RegExp("^import ").test(line))
+      .map(line => line.replace("import ", "").trim().replace(new RegExp(" .*"), ""));
+
+    for (var i = 0; i < imports.length; ++i) {
+      var import_imported_by_path = fm_file_path(imports[i]) + ".imported_by";
+      if (!fs.existsSync(import_imported_by_path)) {
+        await fsp.writeFile(import_imported_by_path, "");
+      }
+      await fsp.appendFile(import_imported_by_path, file_name+"#"+file_hash + "\n");
+    }
+
+    await fsp.writeFile(file_path, file_code);
+    return ["ok", file_name+"#"+file_hash];
+  } catch (e) {
+    console.log(e);
+    return ["err", "Couldn't save file."];
   }
 });
 
