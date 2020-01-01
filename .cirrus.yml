@@ -1,8 +1,9 @@
 docker_builder:
   name: Docker
+  only_if: $CIRRUS_REPO_OWNER == 'moonad' && $CIRRUS_BRANCH == 'master'
   env:
-    DOCKER_PASSWORD: ENCRYPTED[ed0a2d6d1d1b184a4c424f8485d21a938a92b8aeb607de05a50bea2a0e07eedd5c45f02594d073409c47371a7f0f89cb]
-    DOCKER_USERNAME: ENCRYPTED[876aa6e366dbec45c680ed5dd112b009bdcace5dd32599c29aa4a370e9dff0c8456ba57d438fb859863cebff3bbbf0b3]
+    DOCKER_PASSWORD: ENCRYPTED[!2acf952188c80f9cb7dd5491a7440795ace9aaf9263b1059f2166df8598b281b4e477578aa37ffec0d8915384e608cd1!]
+    DOCKER_USERNAME: ENCRYPTED[!209cb20699409d797bd66e7a249963204894f370bee2ee497dfad63130d663af54b5c5f3fc3e942df7daefcdd9cdb3de!]
   build_script: docker build --tag moonad/formbase:latest .
   login_script: docker login --username $DOCKER_USERNAME --password $DOCKER_PASSWORD
   push_script: docker push moonad/formbase:latest
