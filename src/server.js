@@ -1,139 +1,60 @@
 // TODO: this file isn't very well-coded and needs better abstractions
-
-const sha3 = require('js-sha3').sha3_256;
-
-const to_base64 = numb => {
-  const chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ._";
-  var bits = numb.toString(2);
-  while (bits.length < 24) {
-    bits = "0" + bits;
-  }
-  console.log(bits);
-  var bs64 = "";
-  for (var i = 0; i < 4; ++i) {
-    bs64 += chars[parseInt(bits.slice(i*6, (i+1)*6), 2)];
-  }
-  return bs64;
-};
-
-const suffix = str => {
-  return to_base64(parseInt(sha3(str).slice(-6), 16));
-};
-
-const express = require("express")
-const app = express()
-const port = process.argv[2] || 80;
-const fs = require("fs");
-const fsp = require("fs").promises;
+const createApp = require('./app.js');
+const http = require('http');
 const path = require("path");
+const { createTerminus } = require('@godaddy/terminus');
 
-const fm_file_path = file_name => {  
-  return path.join(__dirname, "..", "fm", file_name + ".fm");
+const store_path = process.env.STORE_PATH || path.join(__dirname, "..", "fm");
+const port = process.env.PORT || process.argv[2] || 80;
+// Shutdown Delay should be set when using k8s to avoid race conditions.
+// This should be set to something bigger than the readiness probe
+const shutdownDelay = +(process.env.SHUTDOWN_DELAY || 0);
+
+const app = createApp(store_path);
+const server = http.createServer(app);
+
+// TODO: Implement real healtchecks and cleanups
+
+function beforeShutdown() {
+  return new Promise(resolve => setTimeout(resolve, shutdownDelay))
+}
+
+// Right now we don't have any cleaning up to do, but if we add some persisten things like a pool
+// of data or something like that the termination of that should be done here.
+function onSignal() {
+  console.log('server is starting cleanup');
+}
+
+function onShutdown () {
+  console.log('cleanup finished, server is shutting down');
+}
+
+// Liveness probes should be really simple. A failure here will cause the service to restart.
+function liveness() {
+  return Promise.resolve({});
+}
+
+// Right now we don't have any health checking, but readiness shold check that everything it needs
+// to operate is ready. For example, it may wait for database connections.
+function readiness() {
+  return Promise.resolve({});
+}
+
+const options = {
+  signals: ["SIGINT", "SIGTERM"],
+  onSignal,
+  onShutdown,
+  beforeShutdown,
+  healthChecks: {
+    '/health/alive': liveness,
+    '/health/ready': readiness,
+    verbatim: true
+  }
 };
 
-const fm_save_file = (async function save(file_name, file_code) {
-  var file_hash = suffix(file_code);
-  var file_path = fm_file_path(file_name + "#" + file_hash);
+createTerminus(server, options);
 
-  try {
-    // Already saved, just return name
-    if (fs.existsSync(file_path)) {
-      return ["ok", file_name+"#"+file_hash]; // TODO: check if is actually the same file (collison)
-    }
-    
-    var imports = file_code
-      .split("\n")
-      .filter(line => new RegExp("^import ").test(line))
-      .map(line => line.replace("import ", "").trim().replace(new RegExp(" .*"), ""));
-
-    for (var i = 0; i < imports.length; ++i) {
-      var import_imported_by_path = fm_file_path(imports[i]) + ".imported_by";
-      if (!fs.existsSync(import_imported_by_path)) {
-        await fsp.writeFile(import_imported_by_path, "");
-      }
-      await fsp.appendFile(import_imported_by_path, file_name+"#"+file_hash + "\n");
-    }
-
-    await fsp.writeFile(file_path, file_code);
-    return ["ok", file_name+"#"+file_hash];
-  } catch (e) {
-    console.log(e);
-    return ["err", "Couldn't save file."];
-  }
-});
-
-const fm_load_file_parents = (async function load_file_parents(file_name_v) {
-  try {
-    var file_path = fm_file_path(file_name_v) + ".imported_by";
-    //console.log("loading imports:", file_path);
-    if (fs.existsSync(file_path)) {
-      var imports = (await fsp.readFile(file_path, "utf8")).split("\n");
-      imports.pop();
-      return ["ok", imports];
-    } else {
-      return ["ok", []];
-    }
-  } catch (e) {
-    //console.log("error", e);
-    return ["err", "Couldn't load imports of '" + file_name_v + "'."];
-  }
-});
-
-
-const fm_load_file = (async function load(file_name_v) {
-  try {
-    var file_path = fm_file_path(file_name_v);
-    if (fs.existsSync(file_path)) {
-      return ["ok", await fsp.readFile(file_path, "utf8")];
-    } else {
-      return ["err", "Couldn't find a file named '" + file_name_v + "' on FPM."];
-    }
-  } catch (e) {
-    return ["err", "Couldn't load '" + file_name_v + "'."];
-  }
-});
-
-app.use(express.urlencoded({extended: true}));
-app.use(express.json());
-
-app.use(function(req, res, next) {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
-  next();
-});
-
-app.get("*", (req, res) => {
-  res.sendFile("/docs" + (req.path === "/" ? "/index.html" : req.path), {root: __dirname + "/.."});
-});
-
-app.post("/api/save_file", (req, res) => {
-  var file = req.body.file;
-  var code = req.body.code;
-  if (!file || !code) {
-    return res.send(JSON.stringify(["err"]))
-  }
-  fm_save_file(file, code)
-    .then(result => {
-      if (result[0] === "ok") {
-        console.log("Saved " + result[1] + ": " + code.length + " chars");
-      }
-      return res.send(JSON.stringify(result))
-    })
-    .catch(e => res.send(JSON.stringify(["err"])));
-});
-
-app.post("/api/load_file", (req, res) => {
-  var file = req.body.file;
-  fm_load_file(file)
-    .then(result => res.send(JSON.stringify(result)))
-    .catch(e => res.send(JSON.stringify(["err", "Couldn't save file."])));
-});
-
-app.post("/api/load_file_parents", (req, res) => {
-  var file = req.body.file;
-  fm_load_file_parents(file)
-    .then(result => res.send(JSON.stringify(result)))
-    .catch(e => res.send(JSON.stringify(["err", "Couldn't save file."])));
-});
-
-app.listen(port, () => console.log(`Example app listening on port ${port}!`))
+server.listen(port, () => console.log([
+  `Example app listening on port ${port}!`,
+  `Files will be saved to ${store_path}`
+].join("\n")));
