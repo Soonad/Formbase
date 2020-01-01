@@ -6,7 +6,7 @@ const { createTerminus } = require('@godaddy/terminus')
 const port = process.env.PORT || process.argv[2] || 80;
 // Shutdown Delay should be set when using k8s to avoid race conditions.
 // This should be set to something bigger than the readiness probe
-const shutdownDelay = process.env.SHUTDOWN_DELAY || 0;
+const shutdownDelay = +(process.env.SHUTDOWN_DELAY || 0);
 
 const server = http.createServer(app)
 
