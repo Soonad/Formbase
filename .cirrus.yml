@@ -1,6 +1,5 @@
 docker_builder:
   name: Docker
-  only_if: $CIRRUS_REPO_OWNER == 'moonad' && $CIRRUS_BRANCH == 'master'
   env:
     DOCKER_PASSWORD: ENCRYPTED[!2acf952188c80f9cb7dd5491a7440795ace9aaf9263b1059f2166df8598b281b4e477578aa37ffec0d8915384e608cd1!]
     DOCKER_USERNAME: ENCRYPTED[!209cb20699409d797bd66e7a249963204894f370bee2ee497dfad63130d663af54b5c5f3fc3e942df7daefcdd9cdb3de!]
