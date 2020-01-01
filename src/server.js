@@ -1,14 +1,17 @@
 // TODO: this file isn't very well-coded and needs better abstractions
-const app = require('./app.js')
-const http = require('http')
-const { createTerminus } = require('@godaddy/terminus')
+const createApp = require('./app.js');
+const http = require('http');
+const path = require("path");
+const { createTerminus } = require('@godaddy/terminus');
 
+const store_path = process.env.STORE_PATH || path.join(__dirname, "..", "fm");
 const port = process.env.PORT || process.argv[2] || 80;
 // Shutdown Delay should be set when using k8s to avoid race conditions.
 // This should be set to something bigger than the readiness probe
 const shutdownDelay = +(process.env.SHUTDOWN_DELAY || 0);
 
-const server = http.createServer(app)
+const app = createApp(store_path);
+const server = http.createServer(app);
 
 // TODO: Implement real healtchecks and cleanups
 
@@ -51,4 +54,7 @@ const options = {
 
 createTerminus(server, options);
 
-server.listen(port, () => console.log(`Example app listening on port ${port}!`));
+server.listen(port, () => console.log([
+  `Example app listening on port ${port}!`,
+  `Files will be saved to ${store_path}`
+].join("\n")));
