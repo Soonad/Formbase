@@ -98,10 +98,6 @@ module.exports = (store_path) => {
     next();
   });
 
-  app.get("*", (req, res) => {
-    res.sendFile("/docs" + (req.path === "/" ? "/index.html" : req.path), {root: __dirname + "/.."});
-  });
-
   app.post("/api/save_file", (req, res) => {
     var file = req.body.file;
     var code = req.body.code;
