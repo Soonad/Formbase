@@ -22,12 +22,12 @@ const suffix = str => {
 
 const express = require("express")
 const app = express()
-const port = process.argv[2] || 80;
+const port = process.env.PORT || process.argv[2] || 80;
 const fs = require("fs");
 const fsp = require("fs").promises;
 const path = require("path");
 
-const fm_file_path = file_name => {  
+const fm_file_path = file_name => {
   return path.join(__dirname, "..", "fm", file_name + ".fm");
 };
 
@@ -40,7 +40,7 @@ const fm_save_file = (async function save(file_name, file_code) {
     if (fs.existsSync(file_path)) {
       return ["ok", file_name+"#"+file_hash]; // TODO: check if is actually the same file (collison)
     }
-    
+
     var imports = file_code
       .split("\n")
       .filter(line => new RegExp("^import ").test(line))
@@ -136,4 +136,38 @@ app.post("/api/load_file_parents", (req, res) => {
     .catch(e => res.send(JSON.stringify(["err", "Couldn't save file."])));
 });
 
-app.listen(port, () => console.log(`Example app listening on port ${port}!`))
+const http = require('http')
+const { createTerminus } = require('@godaddy/terminus')
+const server = http.createServer(app)
+
+// TODO: Implement real healtchecks and cleanups
+
+function onSignal() {
+  console.log('server is starting cleanup');
+}
+
+function onShutdown () {
+  console.log('cleanup finished, server is shutting down');
+}
+
+function liveness() {
+  return Promise.resolve({ok: true});
+}
+
+function readiness() {
+  return Promise.resolve({ok: true});
+}
+
+const options = {
+  signal: "SIGINT",
+  onSignal,
+  onShutdown,
+  healtchecks: {
+    '/health/alive': liveness,
+    '/health/ready': readiness
+  }
+};
+
+createTerminus(server, options);
+
+server.listen(port, () => console.log(`Example app listening on port ${port}!`));
